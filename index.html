@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>TIPOTS Chaos DVD</title>
+<style>
+body{
+  margin:0;
+  overflow:hidden;
+  background: black;
+  font-family:monospace;
+  color:white;
+}
+
+#ui{
+  position:fixed;
+  top:10px;
+  left:10px;
+  font-size:32px;
+}
+
+#timer{
+  position:fixed;
+  bottom:40px;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:16px;
+  font-weight:normal;
+  color:white;
+  background:black;
+  padding:3px 6px;
+  z-index:9999;
+}
+
+#gameover{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  font-size:64px;
+  color:red;
+  display:none;
+  font-weight:bold;
+  z-index:10000;
+}
+
+img{
+  position:absolute;
+  cursor:pointer;
+}
+
+#teapot{
+  width:220px;
+  z-index:100;
+}
+
+.clone{
+  filter: grayscale(60%) brightness(70%);
+  pointer-events:none;
+}
+
+.dvd{
+  width:120px;
+  pointer-events:none;
+  transition: filter 0.1s linear;
+}
+</style>
+</head>
+
+<body>
+
+<img id="teapot" src="Teapot.png">
+
+<div id="ui">
+TIPOTS: <span id="score">0</span><br>
+Record: <span id="record">0</span>
+</div>
+
+<div id="timer">Click the teapot.</div>
+<div id="gameover"></div>
+
+<script>
+/********** VARIABLES **********/
+let score = 0;
+let record = localStorage.getItem('tipotsRecord') || 0;
+let clones = [];
+let dvds = [];
+let teapotSize = 220;
+let resetChance = 1;
+let timerRunning = false;
+let dead = false;
+
+const teapot = document.getElementById("teapot");
+const scoreText = document.getElementById("score");
+const recordText = document.getElementById("record");
+const timerEl = document.getElementById("timer");
+const gameOverEl = document.getElementById("gameover");
+
+recordText.textContent = record;
+
+const deathMessages = [
+  "UH OH LOL",
+  "YOU DIED!",
+  "TIPOTS GONE!",
+  "GAME OVER, MAN",
+  "OUCH!",
+  "TRY AGAIN?",
+  "OOPSIE",
+  "LOSER!",
+  "RIP TIPOTS",
+  "WHAT A FAIL!"
+];
+
+const rainbowHues = [0,30,60,120,240,275,300];
+
+/********** FUNCIONES UTILES **********/
+function teleport(el){
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  el.style.left = Math.random()*(window.innerWidth-w)+"px";
+  el.style.top  = Math.random()*(window.innerHeight-h)+"px";
+}
+
+function teleportAll(){
+  teleport(teapot);
+  clones.forEach(c => teleport(c));
+}
+
+function collide(a,b){
+  return !(
+    a.offsetLeft + a.offsetWidth < b.offsetLeft ||
+    a.offsetLeft > b.offsetLeft + b.offsetWidth ||
+    a.offsetTop + a.offsetHeight < b.offsetTop ||
+    a.offsetTop > b.offsetTop + b.offsetHeight
+  )
+}
+
+function randomDeathMessage(){
+  return deathMessages[Math.floor(Math.random()*deathMessages.length)];
+}
+
+/********** CLONES **********/
+function spawnClone(){
+  const c = document.createElement("img");
+  c.src = "Teapot.png";
+  c.className = "clone";
+  c.style.width = teapot.offsetWidth + "px";  // tamaño igual al real
+  c.style.position = "absolute";
+  teleport(c);
+  document.body.appendChild(c);
+  clones.push(c);
+}
+
+/********** DVD **********/
+function spawnDVD(x,y,dx,dy){
+  const dvd = document.createElement("img");
+  dvd.src = "dvd-Video.png";
+  dvd.className = "dvd";
+  dvd.style.left = (x!==undefined?x:Math.random()*(window.innerWidth-120)) + "px";
+  dvd.style.top  = (y!==undefined?y:Math.random()*(window.innerHeight-120)) + "px";
+  dvd.dx = dx!==undefined?dx:(Math.random()>0.5?1:-1)*3;
+  dvd.dy = dy!==undefined?dy:(Math.random()>0.5?1:-1)*3;
+  document.body.appendChild(dvd);
+  dvds.push(dvd);
+}
+
+/********** ARCOIRIS DVD **********/
+function rainbowEffect(dvd,duration){
+  const start = performance.now();
+  function loop(now){
+    if(now-start >= duration) return dvd.style.filter="";
+    dvd.style.filter = `hue-rotate(${(now-start)/duration*360}deg)`;
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+/********** MOVIMIENTO DVD **********/
+function moveDVDs(){
+  dvds.forEach(dvd=>{
+    let x = dvd.offsetLeft + dvd.dx;
+    let y = dvd.offsetTop + dvd.dy;
+    let hitEdge=false;
+    let hitCorner=false;
+
+    // Rebote en bordes (DVD llega hasta el borde inferior)
+    if(x<=0 || x>=window.innerWidth-120){ dvd.dx*=-1; hitEdge=true }
+    if(y<=0 || y>=window.innerHeight-120){ dvd.dy*=-1; hitEdge=true }
+
+    // Esquina
+    if((x<=0 || x>=window.innerWidth-120) && (y<=0 || y>=window.innerHeight-120)){
+      hitCorner=true;
+    }
+
+    dvd.style.left = x + "px";
+    dvd.style.top  = y + "px";
+
+    if(hitEdge){
+      dvd.style.filter = `hue-rotate(${rainbowHues[Math.floor(Math.random()*rainbowHues.length)]}deg)`;
+    }
+
+    // Duplicar al tocar esquina
+    if(hitCorner){
+      spawnDVD(x,y,dvd.dx,dvd.dy);
+      rainbowEffect(dvd,(5+Math.random()*4)*1000);
+    }
+
+    // Colisión con tetera (mitad inferior)
+    if(!dead &&
+       dvd.offsetLeft + dvd.offsetWidth > teapot.offsetLeft &&
+       dvd.offsetLeft < teapot.offsetLeft + teapot.offsetWidth &&
+       dvd.offsetTop + dvd.offsetHeight > teapot.offsetTop + teapot.offsetHeight*0.5 &&
+       dvd.offsetTop < teapot.offsetTop + teapot.offsetHeight){
+         
+         dvd.dx*=-1
+         dvd.dy*=-1
+         addScore()
+         teleportAll()
+    }
+
+  });
+  requestAnimationFrame(moveDVDs);
+}
+
+/********** PUNTAJE **********/
+function addScore(){
+  score++;
+  scoreText.textContent = score;
+  if(score>record){
+    record=score;
+    recordText.textContent=record;
+    localStorage.setItem('tipotsRecord', record);
+  }
+  if(score>=100){
+    if(Math.random()*100 < resetChance){
+      gameOver(randomDeathMessage());
+    }
+    resetChance += 0.5;
+  }
+}
+
+/********** CLICK TETERA **********/
+teapot.onclick = ()=>{
+  if(!timerRunning){
+    timerRunning=true;
+    startTime = performance.now();
+    timerStart = 6500;
+    updateTimer();
+  }
+
+  addScore();
+  teleportAll();
+
+  teapotSize *= 0.95;
+  teapot.style.width = teapotSize + "px";
+
+  // actualizar clones al tamaño actual
+  clones.forEach(c => c.style.width = teapotSize + "px");
+
+  timerStart = 6500;
+  startTime = performance.now();
+
+  if(score>=20 && score%2===0) spawnClone();
+  if(score>=50) teapot.style.opacity=0.5;
+  if(score>=15 && dvds.length===0) spawnDVD();
+}
+
+/********** TEMPORIZADOR 6.5s **********/
+let timerStart=6500;
+let startTime=0;
+let flash=false;
+let lastFlash=0;
+
+function updateTimer(){
+  if(dead) return;
+  const now=performance.now();
+  const elapsed = now-startTime;
+  const remain=Math.max(0,timerStart-elapsed);
+  const sec = remain/1000;
+  timerEl.textContent = sec.toFixed(35);
+
+  if(sec>5 && sec<6.5 && Math.random()<0.02){ timerEl.style.color="red"; }
+  else {
+    let speed=0;
+    if(sec<=5) speed=200;
+    if(sec<=2) speed=80;
+    if(sec<=1) speed=30;
+    if(speed && now-lastFlash>speed){ flash=!flash; timerEl.style.color=flash?"red":"white"; lastFlash=now; }
+  }
+
+  if(sec<=5){
+    let maxShake = sec<=1?6:sec<=2?4:2;
+    let x=(Math.random()*maxShake*2-maxShake);
+    let y=(Math.random()*maxShake*2-maxShake);
+    timerEl.style.transform = `translateX(-50%) translate(${x}px,${y}px)`;
+  } else timerEl.style.transform = "translateX(-50%)";
+
+  if(remain<=0) gameOver(randomDeathMessage());
+  else requestAnimationFrame(updateTimer);
+}
+
+/********** GAME OVER **********/
+function gameOver(msg){
+  if(dead) return;
+  dead=true;
+  teapot.style.display="none";
+  clones.forEach(c=>c.style.display="none");
+  gameOverEl.innerHTML = msg + "<br>Press 'R' to restart";
+  gameOverEl.style.display = "block";
+}
+
+/********** REINICIO CON R **********/
+document.addEventListener('keydown',e=>{
+  if(e.key.toLowerCase()==='r') location.reload();
+});
+
+/********** INICIO **********/
+moveDVDs();
+</script>
+
+</body>
+</html>
